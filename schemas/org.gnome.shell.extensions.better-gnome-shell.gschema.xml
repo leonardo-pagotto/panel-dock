@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="better-gnome-shell">
+  <schema id="org.gnome.shell.extensions.better-gnome-shell" path="/org/gnome/shell/extensions/better-gnome-shell/">
+    <key name="dock-orientation" type="s">
+      <choices>
+        <choice value="top"/>
+        <choice value="bottom"/>
+      </choices>
+      <default>'bottom'</default>
+      <summary>Dock orientation</summary>
+      <description>Whether the dock sits at the top or the bottom of the screen. The extension stores this value and does not apply it yet.</description>
+    </key>
+    <key name="monitor-panels" type="a{sa{sv}}">
+      <default><![CDATA[@a{sa{sv}} {}]]></default>
+      <summary>Per-monitor panel settings</summary>
+      <description>Maps a monitor connector to that monitor's panel settings. Each entry may contain panel-enabled (boolean) and icons (a dictionary of icon id to boolean). Missing monitors and icons stay enabled. The extension stores these values and does not apply them yet.</description>
+    </key>
+  </schema>
+</schemalist>

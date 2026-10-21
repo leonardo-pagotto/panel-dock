@@ -1,0 +1,27 @@
+---
+description: GJS coding practices for extension JavaScript
+globs: "**/*.js"
+alwaysApply: false
+---
+
+# GJS style
+
+Follow `docs/coding-practices.md`. Shell-change patterns are in `docs/patterns.md`.
+
+- ESM. `gi://` imports first, then `resource:///`, then local modules.
+- `const` and `let`, 4-space indent, leading `_` for private methods and fields.
+- Return early from guard clauses. Use a large `if` only when both branches are the work.
+- SOLID, detailed in `docs/coding-practices.md`. One reason to change per class and per JS file.
+- Actors use `GObject.registerClass` and `_init`. Feature controllers stay plain classes.
+- Log with `extension.getLogger()`. Do not use global `log()` or `console.log`.
+- Timeouts use `GLib.timeout_add` and are removed with `GLib.source_remove` in `disable()`.
+- User-visible strings use `gettext as _` from `resource:///org/gnome/shell/extensions/extension.js`.
+- Start the file with `// SPDX-License-Identifier: GPL-2.0-or-later`.
+
+```javascript
+// Bad
+this._panel.connect('scroll-event', this._onScroll);
+
+// Good
+this._signals.connect(this._panel, 'scroll-event', () => this._onScroll());
+```

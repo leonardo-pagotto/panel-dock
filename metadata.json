@@ -1,0 +1,8 @@
+{
+  "uuid": "better-gnome-shell@leonardo",
+  "name": "Better GNOME Shell",
+  "description": "A GNOME Shell extension.",
+  "shell-version": ["50"],
+  "gettext-domain": "better-gnome-shell",
+  "settings-schema": "org.gnome.shell.extensions.better-gnome-shell"
+}

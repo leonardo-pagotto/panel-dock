@@ -1,0 +1,31 @@
+---
+description: Core constraints for the Better GNOME Shell extension
+alwaysApply: true
+---
+
+# Better GNOME Shell
+
+GNOME Shell 50 ESM extension (`better-gnome-shell@leonardo`). It customizes the top bar and the overview Dash.
+
+Before implementing a feature, read:
+
+- `docs/constraints.md`
+- `docs/architecture.md`
+- `docs/coding-practices.md`
+- `docs/patterns.md`
+
+`AGENTS.md` is the index.
+
+## Hard rules
+
+- GJS only. Import from `gi://` and `resource:///`. No Node, npm, bundler, `require()`, or TypeScript.
+- Shell 50 only. Do not add shims for older shells unless the task asks.
+- Never edit `/usr/share/gnome-shell`. Apply changes at runtime and reverse them in `disable()`.
+- `extension.js` only owns lifecycle. UI and patches go in `features/`.
+- `disable()` must undo a partial `enable()` and must not throw. Remove timeouts, disconnect signals, restore methods, restore stock widgets, destroy actors this extension created, then null the fields.
+- The smile indicator in `extension.js` is the template. Remove it when the first feature lands. Do not build on it.
+- Dock work customizes `Main.overview.dash` unless the task explicitly asks for a persistent dock.
+- Do not add a GSettings schema or `prefs.js` until a task needs a user preference.
+- `prefs.js` only adds pages. Each preferences page or subpage is its own named export under `preferences/`.
+
+New JS files start with `// SPDX-License-Identifier: GPL-2.0-or-later`.

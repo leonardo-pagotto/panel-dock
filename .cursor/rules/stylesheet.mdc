@@ -1,0 +1,26 @@
+---
+description: Stylesheet rules for extension CSS
+globs: "**/*.css"
+alwaysApply: false
+---
+
+# Stylesheet
+
+Follow the CSS section of `docs/patterns.md`.
+
+- Prefix every class with `better-gnome-shell-`.
+- Keep a shell class in a selector only to narrow an extension class.
+- Put shared look in `stylesheet.css`. Use inline `style` only for a value computed at runtime.
+- Do not edit the shell theme under `/usr/share/gnome-shell`.
+
+```css
+/* Bad */
+.panel {
+    background-color: transparent;
+}
+
+/* Good */
+.panel-button.better-gnome-shell-clock {
+    padding: 0 4px;
+}
+```
