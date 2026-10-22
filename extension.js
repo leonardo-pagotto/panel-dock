@@ -2,6 +2,7 @@
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {Dock} from './features/dock.js';
 import {TopBar} from './features/topBar.js';
 import {PanelIconsService} from './services/panelIconsService.js';
 
@@ -10,7 +11,7 @@ export default class BetterGnomeShellExtension extends Extension {
         this._settings = this.getSettings();
         this._features = [];
 
-        for (const Feature of [TopBar]) {
+        for (const Feature of [TopBar, Dock]) {
             const feature = new Feature(this, this._settings);
             this._features.push(feature);
             feature.enable();

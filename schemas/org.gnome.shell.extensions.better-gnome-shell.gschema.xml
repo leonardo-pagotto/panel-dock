@@ -1,6 +1,44 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="better-gnome-shell">
   <schema id="org.gnome.shell.extensions.better-gnome-shell" path="/org/gnome/shell/extensions/better-gnome-shell/">
+    <key name="dock-autohide" type="b">
+      <default>true</default>
+      <summary>Autohide the dock</summary>
+      <description>Hide the dock on the desktop until the pointer brings it back. The dock stays visible in the overview.</description>
+    </key>
+    <key name="dock-pressure-to-activate" type="b">
+      <default>true</default>
+      <summary>Pressure to activate</summary>
+      <description>Require a press against the bottom edge before showing the hidden dock. When this is off, moving into the dock area shows it.</description>
+    </key>
+    <key name="dock-autohide-in-fullscreen" type="b">
+      <default>false</default>
+      <summary>Enable autohide in fullscreen</summary>
+      <description>Allow the hidden dock to be revealed while a window is fullscreen on the primary monitor. When this is off, the dock stays hidden in that case.</description>
+    </key>
+    <key name="dock-autohide-urgent" type="b">
+      <default>false</default>
+      <summary>Show the dock for an urgent notification</summary>
+      <description>Reveal the dock when a notification arrives with critical urgency, and keep it shown until that notification is dismissed.</description>
+    </key>
+    <key name="dock-animation-duration" type="i">
+      <range min="0" max="2000"/>
+      <default>200</default>
+      <summary>Dock animation duration</summary>
+      <description>How long the dock takes to show and hide, in milliseconds.</description>
+    </key>
+    <key name="dock-hide-timeout" type="i">
+      <range min="0" max="5000"/>
+      <default>400</default>
+      <summary>Dock hide timeout</summary>
+      <description>How long the pointer must stay away from the dock before it hides, in milliseconds.</description>
+    </key>
+    <key name="dock-pressure-threshold" type="i">
+      <range min="0" max="500"/>
+      <default>100</default>
+      <summary>Dock pressure threshold</summary>
+      <description>How far the pointer must press against the bottom edge, in pixels, before the dock is shown. Used when pressure to activate is on.</description>
+    </key>
     <key name="dock-orientation" type="s">
       <choices>
         <choice value="top"/>
