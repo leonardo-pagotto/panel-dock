@@ -2,97 +2,14 @@
 
 import Adw from 'gi://Adw?version=1';
 import Gdk from 'gi://Gdk?version=4.0';
-import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk?version=4.0';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-const MONITOR_PANELS_KEY = 'monitor-panels';
-
-function panelIcons() {
-    return [
-        {id: 'activities', title: _('Activities')},
-        {id: 'dateMenu', title: _('Clock')},
-        {id: 'quickSettings', title: _('Quick Settings')},
-    ];
-}
-
-function monitorLabel(monitor, index) {
-    const description = monitor.get_description();
-    const connector = monitor.get_connector();
-    const title = description || connector || _('Monitor %d').format(index + 1);
-
-    const geometry = monitor.get_geometry();
-    const parts = [];
-
-    if (connector && connector !== title)
-        parts.push(connector);
-
-    parts.push(`${geometry.width}×${geometry.height}`);
-
-    const refresh = Math.round(monitor.get_refresh_rate() / 1000);
-    if (refresh > 0)
-        parts.push(_('%d Hz').format(refresh));
-
-    const scalePercent = Math.round(monitor.get_scale() * 100);
-    if (scalePercent !== 100)
-        parts.push(_('%d%%').format(scalePercent));
-
-    return {
-        title,
-        subtitle: parts.join(' · '),
-        connector: connector || `monitor-${index}`,
-    };
-}
-
-function readMonitorPanels(settings) {
-    return settings.get_value(MONITOR_PANELS_KEY).recursiveUnpack();
-}
-
-function packMonitorEntry(entry) {
-    const packedIcons = {};
-    const fields = {
-        'panel-enabled': GLib.Variant.new('b', entry['panel-enabled'] !== false),
-    };
-
-    for (const [id, enabled] of Object.entries(entry.icons ?? {})) {
-        if (typeof enabled === 'boolean')
-            packedIcons[id] = enabled;
-    }
-
-    if (Object.keys(packedIcons).length > 0)
-        fields.icons = GLib.Variant.new('a{sb}', packedIcons);
-
-    // a{sa{sv}} wants a plain dictionary here. A nested Variant is packed twice.
-    return fields;
-}
-
-function writeMonitorPanels(settings, panels) {
-    const packed = {};
-
-    for (const [connector, entry] of Object.entries(panels))
-        packed[connector] = packMonitorEntry(entry);
-
-    settings.set_value(MONITOR_PANELS_KEY, GLib.Variant.new('a{sa{sv}}', packed));
-}
-
-function monitorEntry(settings, connector) {
-    const stored = readMonitorPanels(settings)[connector] ?? {};
-
-    return {
-        'panel-enabled': stored['panel-enabled'] !== false,
-        icons: {...(stored.icons ?? {})},
-    };
-}
-
-function updateMonitor(settings, connector, mutate) {
-    const panels = readMonitorPanels(settings);
-    const entry = monitorEntry(settings, connector);
-    mutate(entry);
-    panels[connector] = entry;
-    writeMonitorPanels(settings, panels);
-}
+import {PANEL_ICONS_KEY} from '../lib/settingsKeys.js';
+import {monitorLabel} from './utils/monitorLabel.js';
+import {MonitorService} from '../services/monitorService.js';
 
 export class PanelPage extends Adw.PreferencesPage {
     static {
@@ -107,13 +24,17 @@ export class PanelPage extends Adw.PreferencesPage {
         });
 
         this._settings = settings;
+        this._monitorService = new MonitorService(settings);
         this._monitorRows = [];
         this._monitorsChangedId = 0;
+        this._panelIconsChangedId = settings.connect(`changed::${PANEL_ICONS_KEY}`, () => {
+            this._reloadMonitors();
+        });
         this._updating = false;
 
         this._monitorsGroup = new Adw.PreferencesGroup({
             title: _('Monitors'),
-            description: _('The panel switch and icon settings are stored per monitor for a future version.'),
+            description: _('Show the top bar on a monitor and choose which buttons it shows.'),
         });
         this.add(this._monitorsGroup);
 
@@ -137,6 +58,11 @@ export class PanelPage extends Adw.PreferencesPage {
     }
 
     _disconnectMonitors() {
+        if (this._panelIconsChangedId) {
+            this._settings.disconnect(this._panelIconsChangedId);
+            this._panelIconsChangedId = 0;
+        }
+
         if (!this._monitorsChangedId)
             return;
 
@@ -170,7 +96,7 @@ export class PanelPage extends Adw.PreferencesPage {
 
     _addMonitor(monitor, index) {
         const {title, subtitle, connector} = monitorLabel(monitor, index);
-        const entry = monitorEntry(this._settings, connector);
+        const entry = this._monitorService.entry(connector);
         const row = new Adw.ExpanderRow({
             title,
             subtitle,
@@ -187,7 +113,7 @@ export class PanelPage extends Adw.PreferencesPage {
                 return;
 
             const enabled = row.enable_expansion;
-            updateMonitor(this._settings, connector, monitorSettings => {
+            this._monitorService.update(connector, monitorSettings => {
                 monitorSettings['panel-enabled'] = enabled;
             });
 
@@ -198,7 +124,7 @@ export class PanelPage extends Adw.PreferencesPage {
                 iconRow.sensitive = enabled;
         });
 
-        for (const icon of panelIcons()) {
+        for (const icon of this._panelIcons(this._settings)) {
             const check = new Gtk.CheckButton({
                 active: entry.icons[icon.id] !== false,
                 valign: Gtk.Align.CENTER,
@@ -212,7 +138,7 @@ export class PanelPage extends Adw.PreferencesPage {
                 if (this._updating)
                     return;
 
-                updateMonitor(this._settings, connector, monitorSettings => {
+                this._monitorService.update(connector, monitorSettings => {
                     monitorSettings.icons[icon.id] = check.active;
                 });
             });
@@ -227,5 +153,14 @@ export class PanelPage extends Adw.PreferencesPage {
     _addMonitorRow(row) {
         this._monitorsGroup.add(row);
         this._monitorRows.push(row);
+    }
+
+    _panelIcons(settings) {
+        const labels = settings.get_value(PANEL_ICONS_KEY).deepUnpack();
+
+        return Object.keys(labels).map(id => ({
+            id,
+            title: labels[id] || id,
+        }));
     }
 }

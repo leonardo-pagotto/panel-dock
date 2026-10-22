@@ -10,10 +10,15 @@
       <summary>Dock orientation</summary>
       <description>Whether the dock sits at the top or the bottom of the screen. The extension stores this value and does not apply it yet.</description>
     </key>
+    <key name="panel-icons" type="a{ss}">
+      <default><![CDATA[@a{ss} {}]]></default>
+      <summary>Panel icons</summary>
+      <description>Role-to-label map of the panel status area, written by the extension when it enables. Preferences reads this because it cannot import the shell.</description>
+    </key>
     <key name="monitor-panels" type="a{sa{sv}}">
       <default><![CDATA[@a{sa{sv}} {}]]></default>
       <summary>Per-monitor panel settings</summary>
-      <description>Maps a monitor connector to that monitor's panel settings. Each entry may contain panel-enabled (boolean) and icons (a dictionary of icon id to boolean). Missing monitors and icons stay enabled. The extension stores these values and does not apply them yet.</description>
+      <description>Maps a monitor connector to that monitor's panel settings. Each entry may contain panel-enabled (boolean) and icons (a dictionary of icon id to boolean). Missing monitors and icons stay enabled. panel-enabled shows the top bar. Each icon chooses whether that button is shown on the bar.</description>
     </key>
   </schema>
 </schemalist>

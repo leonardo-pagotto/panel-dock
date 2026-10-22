@@ -22,3 +22,4 @@ disable:
 
 pack:
 	gnome-extensions pack --force --out-dir=. .
+	zip -r $(UUID).shell-extension.zip features lib preferences services

@@ -1,0 +1,49 @@
+---
+description: Move or hide stock GNOME Shell widgets and restore them in disable(). Use when changing top bar or dash layout.
+alwaysApply: false
+---
+
+# Stock widgets
+
+Record visibility, parent, and index before hiding or moving a stock widget. Restore all three in `disable()`. `this._destination` is the box this feature chose. Remove a child from its current parent before inserting it elsewhere.
+
+```javascript
+enable() {
+    const clock = Main.panel.statusArea.dateMenu;
+
+    this._clock = clock;
+    this._clockParent = clock.get_parent();
+    this._clockIndex = this._clockParent.get_children().indexOf(clock);
+    this._clockVisible = clock.visible;
+
+    this._clockParent.remove_child(clock);
+    this._destination.insert_child_at_index(clock, 0);
+}
+
+disable() {
+    const clock = this._clock;
+    const parent = this._clockParent;
+    this._clock = null;
+    this._clockParent = null;
+
+    if (!clock)
+        return;
+
+    clock.get_parent()?.remove_child(clock);
+    parent.insert_child_at_index(clock, this._clockIndex);
+    clock.visible = this._clockVisible;
+}
+```
+
+Destroy only actors this feature created. Null the field after `destroy()`. Destroying an actor twice throws.
+
+```javascript
+// ❌ BAD
+this._button.destroy();
+
+// ✅ GOOD
+this._button?.destroy();
+this._button = null;
+```
+
+Use `Main.panel.addToStatusArea(this._extension.uuid, indicator)` only when the feature's job is a status indicator. Pass a unique name if that id is already taken.

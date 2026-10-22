@@ -1,0 +1,32 @@
+---
+description: GSettings schema and preferences pages. Use when adding a user preference, prefs.js, a schema, or a preferences tab or subpage.
+alwaysApply: false
+---
+
+# Preferences
+
+Add `schemas/` and `prefs.js` only when a task needs a user preference.
+
+- Set `"settings-schema": "org.gnome.shell.extensions.better-gnome-shell"` in `metadata.json`. The schema id is that same string.
+- `extension.js` is the only shell code that calls `this.getSettings()`. Pass that `Gio.Settings` object into the features that read it.
+- Disconnect settings signals in `disable()` through the feature's `SignalTracker`.
+
+`prefs.js` stays at the extension root because GNOME loads that file by name. It only owns `BetterGnomeShellPreferences`.
+
+Each tab is a named export in its own file under `preferences/`. `generalPage.js` exports `GeneralPage`. Do not define a page class in `prefs.js`. Do not put a second page class in a file that already exports one.
+
+```javascript
+export default class BetterGnomeShellPreferences extends ExtensionPreferences {
+    fillPreferencesWindow(window) {
+        const settings = this.getSettings();
+
+        window.add(new GeneralPage());
+        window.add(new PanelPage(settings));
+        window.add(new DockPage(settings));
+    }
+}
+```
+
+A new tab is a new file. `prefs.js` imports that class and adds it to the window.
+
+A subpage follows the same rule: its own file under `preferences/`, imported and added by the parent page. A subpage does not import a sibling page. When two pages need the same helper, move that helper to its own file under `preferences/`.

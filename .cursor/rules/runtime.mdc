@@ -1,0 +1,36 @@
+---
+description: Logging, timeouts, gettext, and errors in GJS
+globs: "**/*.js"
+alwaysApply: false
+---
+
+# Runtime
+
+Log with `extension.getLogger()`. It tags the journal line with this extension's UUID. Do not call global `log()` or `console.log`.
+
+```javascript
+// ❌ BAD
+log('Could not find the dash');
+
+// ✅ GOOD
+this._logger = extension.getLogger();
+this._logger.warn('Could not find the dash');
+```
+
+Use `debug` for noise, `log` for normal steps, `warn` for a skipped customization, and `error` when a feature cannot finish `enable()`.
+
+Schedule delayed work with `GLib.timeout_add`. Store the id, clear it in the callback when the source removes itself, and remove it in `disable()`. Do not use `setTimeout` or `setInterval`.
+
+```javascript
+this._timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+    this._timeoutId = 0;
+    this._refresh();
+    return GLib.SOURCE_REMOVE;
+});
+```
+
+Return `GLib.SOURCE_REMOVE` for a one-shot callback and `GLib.SOURCE_CONTINUE` for a repeating one. A repeating source is still removed in `disable()`.
+
+Wrap user-visible strings in `gettext as _` from `resource:///org/gnome/shell/extensions/extension.js`. Leave journal messages and identifiers untranslated.
+
+Let `enable()` throw when a feature cannot safely change the shell. Catch only when that one change can be skipped and the shell stays as it was. Log the skip with `warn`.

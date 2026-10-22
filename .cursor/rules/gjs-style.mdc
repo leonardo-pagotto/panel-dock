@@ -1,0 +1,49 @@
+---
+description: GJS formatting, imports, names, and control flow
+globs: "**/*.js"
+alwaysApply: false
+---
+
+# GJS style
+
+Match `extension.js`: ES modules, single quotes, semicolons, 4-space indent, trailing commas in multiline literals. Use `const` and `let`.
+
+Group `gi://` imports, then `resource:///` imports, then local modules. One blank line between groups.
+
+```javascript
+// ❌ BAD
+const Main = imports.ui.main;
+
+// ✅ GOOD
+import GLib from 'gi://GLib';
+
+import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
+import {TopBar} from './features/topBar.js';
+```
+
+Prefix private methods and fields with `_`. Feature files are `camelCase.js`. Classes are `PascalCase`. Named exports for features and preference pages. Default export only for the `Extension` subclass in `extension.js` and the `ExtensionPreferences` subclass in `prefs.js`.
+
+Return early from a guard. The main path stays at the top level of the function. Use a large `if` only when both branches are the work.
+
+```javascript
+// ❌ BAD
+if (this._clock) {
+    const parent = this._clock.get_parent();
+    if (parent)
+        parent.remove_child(this._clock);
+}
+
+// ✅ GOOD
+if (!this._clock)
+    return;
+
+const parent = this._clock.get_parent();
+if (!parent)
+    return;
+
+parent.remove_child(this._clock);
+```
+
+Keep an `if` when code after it must still run. Do not comment what the next line does. Comment a shell constraint the code does not show.

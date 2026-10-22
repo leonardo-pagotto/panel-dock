@@ -6,7 +6,7 @@ import Gtk from 'gi://Gtk?version=4.0';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-const DOCK_ORIENTATION_KEY = 'dock-orientation';
+import {DOCK_ORIENTATION_KEY} from '../lib/settingsKeys.js';
 
 function dockOrientations() {
     return [

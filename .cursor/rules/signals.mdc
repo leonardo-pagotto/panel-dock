@@ -1,0 +1,49 @@
+---
+description: Track and disconnect GNOME Shell signal handlers in disable(). Use when connecting to Main.panel, Main.overview, settings, or any object this feature does not destroy.
+alwaysApply: false
+---
+
+# Signals
+
+Track every `connect()` on an object this feature does not own, and disconnect those ids in `disable()`. Put this helper in `lib/signals.js` when a feature first needs it.
+
+```javascript
+import GObject from 'gi://GObject';
+
+export class SignalTracker {
+    constructor() {
+        this._connections = [];
+    }
+
+    connect(object, signal, callback) {
+        const id = object.connect(signal, callback);
+        this._connections.push({object, id});
+        return id;
+    }
+
+    disconnectAll() {
+        while (this._connections.length > 0) {
+            const {object, id} = this._connections.pop();
+
+            try {
+                if (id && GObject.signal_handler_is_connected(object, id))
+                    object.disconnect(id);
+            } catch (e) {
+                // The object may already be gone during session shutdown.
+            }
+        }
+    }
+}
+```
+
+```javascript
+// ❌ BAD
+Main.panel.connect('scroll-event', (_actor, event) => this._onScroll(event));
+
+// ✅ GOOD
+this._signals.connect(Main.panel, 'scroll-event', (_actor, event) => {
+    this._onScroll(event);
+});
+```
+
+`connectObject(signal, callback, owner)` is only for an actor this feature creates and destroys. Shell objects this feature does not destroy go through `SignalTracker`, including settings changes.

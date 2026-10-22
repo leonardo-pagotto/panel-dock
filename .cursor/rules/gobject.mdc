@@ -1,0 +1,34 @@
+---
+description: GObject actors versus plain feature controllers
+globs: "**/*.js"
+alwaysApply: false
+---
+
+# Actors and controllers
+
+A widget on the shell scene graph is a `GObject` subclass. Feature controllers (`TopBar`, `Dock`, `PatchSet`, `SignalTracker`) stay plain classes.
+
+```javascript
+// ❌ BAD
+class ClockButton {
+    constructor() {
+        this.actor = new St.Button();
+    }
+}
+
+// ✅ GOOD
+class ClockButton extends St.Button {
+    static {
+        GObject.registerClass(this);
+    }
+
+    _init() {
+        super._init({
+            style_class: 'better-gnome-shell-clock',
+            label: _('Clock'),
+        });
+    }
+}
+```
+
+Call the actor initializer `_init`, then `super._init(...)`. Do not register a feature controller with `GObject`.

@@ -1,0 +1,47 @@
+---
+description: SOLID for extension classes and JS files, with single responsibility first
+globs: "**/*.js"
+alwaysApply: false
+---
+
+# SOLID
+
+Single responsibility comes first. It decides where the code lives.
+
+A class has one reason to change. A JS file has one reason to change too.
+
+- `features/topBar.js` changes when the top bar changes.
+- `features/dock.js` changes when the dock changes.
+- `preferences/generalPage.js` changes when the General tab changes. Same rule for `panelPage.js` and `dockPage.js`.
+- `lib/patch.js` only saves and restores methods. `lib/signals.js` only tracks signal ids.
+- `extension.js` only constructs features and calls `enable()` and `disable()`.
+- `prefs.js` only adds preferences pages.
+
+A private actor used by one feature stays in that feature's file. When a second feature needs it, move it to its own file. `stylesheet.css` stays the single stylesheet.
+
+```javascript
+// ❌ BAD: one file changes for the panel and the dash
+export class Shell {
+    enable() {
+        this._moveClock();
+        this._resizeDash();
+    }
+}
+
+// ✅ GOOD: features/topBar.js
+export class TopBar {
+    enable() {
+        this._moveClock();
+    }
+}
+```
+
+`TopBar` decides what happens to the panel. It uses `PatchSet` instead of implementing a patch stack.
+
+Open/closed: add a feature, or add code to the feature that owns that surface. Leave `PatchSet` and `SignalTracker` generic.
+
+Liskov: an actor subclass must still work wherever the parent works. Call `super._init(...)`. Feature classes share `enable()` and `disable()` but are not a subclass tree. Do not add a base class of empty methods.
+
+Interface segregation: the feature surface is `constructor(extension)`, `enable()`, and `disable()`. `PatchSet` does not track signals. `SignalTracker` does not restore methods.
+
+Dependency inversion: pass the `Extension` in. A feature uses `lib/` helpers and does not import another feature. It does not call `getSettings()` itself. `extension.js` passes `Gio.Settings` in when a task adds settings.

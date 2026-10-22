@@ -1,0 +1,50 @@
+---
+description: Feature modules and enable/disable order for shell changes
+globs: extension.js,features/**/*.js,lib/**/*.js
+alwaysApply: false
+---
+
+# Architecture
+
+`extension.js` constructs features, calls `enable()` in order, and `disable()` in reverse. Create a module when the first feature needs it. Do not create empty modules, and do not grow the template indicator.
+
+```
+extension.js       # lifecycle only
+features/topBar.js # Main.panel
+features/dock.js   # Main.overview.dash
+lib/patch.js       # method replacements
+lib/signals.js     # signal ids
+```
+
+A feature is a plain class: `constructor(extension)`, `enable()`, `disable()`. Features do not import or call each other. Look up `Main.panel` and `Main.overview` inside `enable()`, not in the constructor.
+
+Push a feature before calling `enable()`. If `enable()` throws, the shell still calls `disable()`.
+
+```javascript
+enable() {
+    this._features = [];
+
+    for (const Feature of [TopBar, Dock]) {
+        const feature = new Feature(this);
+        this._features.push(feature);
+        feature.enable();
+    }
+}
+
+disable() {
+    const features = this._features ?? [];
+
+    for (let i = features.length - 1; i >= 0; i--)
+        features[i].disable();
+
+    this._features = null;
+}
+```
+
+Enable order is top bar, then dock. A third surface gets its own file under `features/`.
+
+`features/dock.js` customizes `Main.overview.dash`. Do not build a persistent dock or integrate with Dash to Dock unless the task asks.
+
+Add a `lib/` helper only when two features need it. Do not put feature behavior in `lib/`.
+
+Leave the default user session. Do not add `unlock-dialog` or other `session-modes` unless the task says the feature must run on the lock screen.

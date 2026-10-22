@@ -1,26 +1,28 @@
 ---
-description: Stylesheet rules for extension CSS
+description: Extension CSS class prefix and selector scope
 globs: "**/*.css"
 alwaysApply: false
 ---
 
 # Stylesheet
 
-Follow the CSS section of `docs/patterns.md`.
-
-- Prefix every class with `better-gnome-shell-`.
-- Keep a shell class in a selector only to narrow an extension class.
-- Put shared look in `stylesheet.css`. Use inline `style` only for a value computed at runtime.
-- Do not edit the shell theme under `/usr/share/gnome-shell`.
+Prefix every class this extension introduces with `better-gnome-shell-`. Put shared look in `stylesheet.css`. Use inline `style` only for a value computed at runtime. Do not edit the shell theme under `/usr/share/gnome-shell`.
 
 ```css
-/* Bad */
+/* ❌ BAD */
 .panel {
     background-color: transparent;
 }
 
-/* Good */
+/* ✅ GOOD */
+.better-gnome-shell-clock {
+    padding: 0 4px;
+}
+
+/* ✅ GOOD: a shell class only narrows an extension class */
 .panel-button.better-gnome-shell-clock {
     padding: 0 4px;
 }
 ```
+
+Set `style_class` in the actor `_init`.
