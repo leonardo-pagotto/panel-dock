@@ -42,7 +42,7 @@ export class DockPage extends Adw.PreferencesPage {
 
         const group = new Adw.PreferencesGroup({
             title: _('Dock'),
-            description: _('Orientation is stored for a future version.'),
+            description: _('Which edge of the screen the dock sits on.'),
         });
         this.add(group);
 

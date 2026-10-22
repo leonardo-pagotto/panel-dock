@@ -15,6 +15,7 @@ import {
     DOCK_AUTOHIDE_KEY,
     DOCK_AUTOHIDE_URGENT_KEY,
     DOCK_HIDE_TIMEOUT_KEY,
+    DOCK_ORIENTATION_KEY,
     DOCK_PRESSURE_THRESHOLD_KEY,
     DOCK_PRESSURE_TO_ACTIVATE_KEY,
 } from '../lib/settingsKeys.js';
@@ -46,7 +47,12 @@ export class Dock {
         this._unredirectInhibited = false;
         this._urgent = new Set();
         this._pressureEvents = [];
+        this._lastPressureX = null;
         this._lastPressureY = null;
+        this._slotX = 0;
+        this._slotY = 0;
+        this._itemWatchId = 0;
+        this._itemCount = -1;
         this._revealed = false;
         this._motionFailed = false;
     }
@@ -88,7 +94,9 @@ export class Dock {
         this._signals.connect(this._settings, `changed::${DOCK_AUTOHIDE_IN_FULLSCREEN_KEY}`, refresh);
         this._signals.connect(this._settings, `changed::${DOCK_AUTOHIDE_URGENT_KEY}`, refresh);
         this._signals.connect(this._settings, `changed::${DOCK_PRESSURE_THRESHOLD_KEY}`, refresh);
+        this._signals.connect(this._settings, `changed::${DOCK_ORIENTATION_KEY}`, refresh);
         this._watchNotifications();
+        this._startItemWatch();
         this._signals.connect(Main.overview, 'showing', () => this._returnDashToOverview());
         this._signals.connect(Main.overview, 'hidden', () => {
             this._revealed = false;
@@ -96,7 +104,6 @@ export class Dock {
         });
         this._signals.connect(global.display, 'in-fullscreen-changed', refresh);
         this._signals.connect(Main.layoutManager, 'monitors-changed', refresh);
-        this._signals.connect(this._dash, 'icon-size-changed', () => this._layoutSlot());
         this._signals.connect(global.stage, 'captured-event', (_actor, event) => {
             return this._onCapturedEvent(event);
         });
@@ -106,6 +113,7 @@ export class Dock {
 
     disable() {
         this._clearSlotSize();
+        this._clearItemWatch();
         this._clearPointerWatch();
         this._urgent?.clear();
         this._setUnredirectInhibited(false);
@@ -275,26 +283,64 @@ export class Dock {
             return;
 
         const now = GLib.get_monotonic_time() / 1000;
-        const zoneTop = monitor.y + monitor.height - this._pressureZone();
-        const inZone = x >= monitor.x && x < monitor.x + monitor.width && y >= zoneTop;
-        const downward = this._lastPressureY == null
-            ? 0
-            : Math.max(0, y - this._lastPressureY);
-        this._lastPressureY = y;
+        const toward = this._towardEdge(x, y);
+        const inZone = this._inPressureZone(x, y, monitor);
         this._pressureEvents = this._pressureEvents.filter(([time]) =>
             now - time < PRESSURE_TIMEOUT_MS);
 
         if (!inZone)
             return;
 
-        const atEdge = y >= monitor.y + monitor.height - EDGE_PX;
-        this._pressureEvents.push([now, Math.max(downward, atEdge ? 1 : 0)]);
+        const atEdge = this._atScreenEdge(x, y, monitor);
+        this._pressureEvents.push([now, Math.max(toward, atEdge ? 1 : 0)]);
         const total = this._pressureEvents.reduce((sum, [, distance]) => sum + distance, 0);
         if (total < this._pressureThreshold())
             return;
 
         this._pressureEvents = [];
         this._show();
+    }
+
+    _towardEdge(x, y) {
+        const lastX = this._lastPressureX;
+        const lastY = this._lastPressureY;
+        this._lastPressureX = x;
+        this._lastPressureY = y;
+        if (lastX == null)
+            return 0;
+        switch (this._orientation()) {
+        case 'left':
+            return Math.max(0, lastX - x);
+        case 'right':
+            return Math.max(0, x - lastX);
+        default:
+            return Math.max(0, y - lastY);
+        }
+    }
+
+    _inPressureZone(x, y, monitor) {
+        const zone = this._pressureZone();
+        switch (this._orientation()) {
+        case 'left':
+            return y >= monitor.y && y < monitor.y + monitor.height && x <= monitor.x + zone;
+        case 'right':
+            return y >= monitor.y && y < monitor.y + monitor.height &&
+                x >= monitor.x + monitor.width - zone;
+        default:
+            return x >= monitor.x && x < monitor.x + monitor.width &&
+                y >= monitor.y + monitor.height - zone;
+        }
+    }
+
+    _atScreenEdge(x, y, monitor) {
+        switch (this._orientation()) {
+        case 'left':
+            return x <= monitor.x + EDGE_PX;
+        case 'right':
+            return x >= monitor.x + monitor.width - EDGE_PX;
+        default:
+            return y >= monitor.y + monitor.height - EDGE_PX;
+        }
     }
 
     _setUnredirectInhibited(inhibit) {
@@ -321,6 +367,130 @@ export class Dock {
 
     _pressureOn() {
         return this._settings?.get_boolean(DOCK_PRESSURE_TO_ACTIVATE_KEY) ?? false;
+    }
+
+    _orientation() {
+        const value = this._settings?.get_string(DOCK_ORIENTATION_KEY);
+        if (value === 'left' || value === 'right')
+            return value;
+        return 'bottom';
+    }
+
+    _vertical() {
+        return this._orientation() !== 'bottom';
+    }
+
+    _startItemWatch() {
+        this._itemWatchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
+            if (!this._dash)
+                return GLib.SOURCE_REMOVE;
+            try {
+                if (this._dash.get_parent() !== this._slot)
+                    return GLib.SOURCE_CONTINUE;
+                const count = this._dash._box?.get_n_children() ?? 0;
+                if (count === this._itemCount)
+                    return GLib.SOURCE_CONTINUE;
+                this._itemCount = count;
+                this._applySlotSize();
+            } catch (e) {
+                // The dash can be mid-update. Keep the timer alive.
+            }
+            return GLib.SOURCE_CONTINUE;
+        });
+    }
+
+    _clearItemWatch() {
+        if (!this._itemWatchId)
+            return;
+        GLib.source_remove(this._itemWatchId);
+        this._itemWatchId = 0;
+    }
+
+    _stackHeight(dash, thickness) {
+        const children = [
+            ...(dash._box?.get_children() ?? []),
+            dash._showAppsIcon,
+        ].filter(Boolean);
+        let height = 0;
+        const limit = Math.max(thickness, 1);
+        for (const child of children) {
+            let nat = 0;
+            try {
+                [, nat] = child.get_preferred_height(limit);
+            } catch (e) {
+                nat = limit;
+            }
+            nat = Math.ceil(nat);
+            if (nat <= 0 || nat > limit * 1.5)
+                nat = limit;
+            height += nat;
+        }
+        return height + Math.round(limit * 0.6);
+    }
+
+    _applyDashOrientation(vertical) {
+        const dash = this._dash;
+        if (!dash?._box?.layout_manager || !dash._dashContainer)
+            return;
+        try {
+            const orientation = vertical
+                ? Clutter.Orientation.VERTICAL
+                : Clutter.Orientation.HORIZONTAL;
+            if (dash._box.layout_manager.orientation !== orientation)
+                dash._box.layout_manager.orientation = orientation;
+            if (dash._dashContainer.orientation !== orientation)
+                dash._dashContainer.orientation = orientation;
+            if (dash._background) {
+                dash._background.x_expand = vertical;
+                dash._background.y_expand = vertical;
+            }
+            this._syncSeparator(vertical);
+            this._placeRunningDots(vertical);
+        } catch (e) {
+            this._logger?.warn(`Could not orient the dock: ${e.message}`);
+        }
+    }
+
+    _syncSeparator(vertical) {
+        const separator = this._dash?._separator;
+        if (!separator)
+            return;
+        if (!vertical) {
+            separator.height = this._dash.iconSize || 64;
+            separator.width = 1;
+            separator.margin_top = 0;
+            separator.margin_bottom = 0;
+            return;
+        }
+        separator.width = Math.round(this._iconPixels() * 0.55);
+        separator.height = 1;
+        separator.margin_top = 8;
+        separator.margin_bottom = 8;
+        separator.margin_left = 0;
+        separator.margin_right = 0;
+        separator.x_align = Clutter.ActorAlign.CENTER;
+    }
+
+    _placeRunningDots(vertical) {
+        const items = this._dash?._box?.get_children() ?? [];
+        const side = this._orientation();
+        for (const item of items) {
+            const dot = item.child?._dot;
+            if (!dot)
+                continue;
+            if (!vertical) {
+                dot.translation_x = 0;
+                dot.translation_y = 0;
+                continue;
+            }
+            dot.translation_y = 0;
+            dot.translation_x = side === 'left' ? -10 : 10;
+        }
+    }
+
+    _iconPixels() {
+        const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor || 1;
+        return 64 * scale;
     }
 
     _fullscreenBlocks() {
@@ -356,7 +526,9 @@ export class Dock {
         this._revealed = false;
 
         if (dash) {
+            this._applyDashOrientation(false);
             dash.remove_all_transitions();
+            dash.translation_x = 0;
             dash.translation_y = 0;
             dash.visible = this._dashVisible;
 
@@ -392,13 +564,7 @@ export class Dock {
         if (!monitor || !dash || !slot || dash.get_parent() !== slot)
             return;
 
-        const width = monitor.width;
-        // A hidden overview can leave this at 0, and the dash then
-        // collapses its icons to the smallest size.
-        const maxHeight = Math.max(Math.round(monitor.height * 0.16), 1);
-        this._settingMaxSize = true;
-        dash.setMaxSize(width, maxHeight);
-        this._settingMaxSize = false;
+        this._applyDashOrientation(this._vertical());
         this._applySlotSize();
         this._queueSlotSize();
     }
@@ -421,21 +587,42 @@ export class Dock {
         if (!monitor || !dash || !slot || dash.get_parent() !== slot)
             return;
 
-        // Same width the overview gives the dash. A tighter width clips the
-        // background, because the pill is centered inside the full allocation.
-        const dashWidth = monitor.width;
-        let [, dashHeight] = dash.get_preferred_height(dashWidth);
-        dashHeight = Math.ceil(dashHeight);
-        if (dashHeight <= 0)
+        const orientation = this._orientation();
+        const vertical = orientation !== 'bottom';
+        let [, prefWidth] = dash.get_preferred_width(-1);
+        let [, prefHeight] = dash.get_preferred_height(Math.max(prefWidth, 1));
+        prefWidth = Math.ceil(prefWidth);
+        prefHeight = Math.ceil(prefHeight);
+        const long = Math.max(prefWidth, prefHeight);
+        const short = Math.min(prefWidth, prefHeight) || this._iconPixels();
+        let dashWidth = vertical ? short : long;
+        let dashHeight = vertical ? this._stackHeight(dash, dashWidth) : short;
+        dashWidth = Math.min(Math.max(dashWidth, 1), vertical ? Math.round(monitor.width * 0.2) : monitor.width);
+        dashHeight = Math.min(Math.max(dashHeight, 1), monitor.height);
+        if (dashWidth <= 0 || dashHeight <= 0)
             return;
 
-        const slotHeight = dashHeight + dash.margin_bottom;
+        let slotX = monitor.x;
+        let slotY = monitor.y + Math.floor((monitor.height - dashHeight) / 2);
+        if (orientation === 'right')
+            slotX = monitor.x + monitor.width - dashWidth;
+        if (orientation === 'bottom') {
+            slotX = monitor.x;
+            slotY = monitor.y + monitor.height - dashHeight;
+        }
+
+        this._slotX = slotX;
+        this._slotY = slotY;
         this._slotWidth = dashWidth;
-        this._slotHeight = slotHeight;
-        slot.set_position(monitor.x, monitor.y + monitor.height - slotHeight);
-        slot.set_size(dashWidth, slotHeight);
+        this._slotHeight = dashHeight;
+        slot.set_position(slotX, slotY);
+        slot.set_size(dashWidth, dashHeight);
         dash.set_position(0, 0);
         dash.set_size(dashWidth, dashHeight);
+        if (this._revealed) {
+            dash.translation_x = 0;
+            dash.translation_y = 0;
+        }
         this._updateEdge();
     }
 
@@ -448,7 +635,9 @@ export class Dock {
         this._clearPointerWatch();
         this._setUnredirectInhibited(false);
         dash.remove_all_transitions();
-        dash.translation_y = this._hiddenOffset();
+        const hidden = this._hiddenOffset();
+        dash.translation_x = hidden.x;
+        dash.translation_y = hidden.y;
         this._revealed = false;
         this._slot?.hide();
         this._updateEdge();
@@ -465,23 +654,28 @@ export class Dock {
             return;
         }
 
-        const thickness = this._pressureOn()
-            ? this._pressureZone()
-            : Math.max(this._slotHeight, EDGE_PX);
-        edge.set_position(monitor.x, monitor.y + monitor.height - thickness);
-        edge.set_size(monitor.width, thickness);
+        const orientation = this._orientation();
+        const thickness = EDGE_PX;
+        if (orientation === 'left') {
+            edge.set_position(monitor.x, monitor.y);
+            edge.set_size(thickness, monitor.height);
+        } else if (orientation === 'right') {
+            edge.set_position(monitor.x + monitor.width - thickness, monitor.y);
+            edge.set_size(thickness, monitor.height);
+        } else {
+            edge.set_position(monitor.x, monitor.y + monitor.height - thickness);
+            edge.set_size(monitor.width, thickness);
+        }
         edge.show();
     }
 
     _hiddenOffset() {
-        if (this._slotHeight > 0)
-            return this._slotHeight;
-
-        const dash = this._dash;
-        if (!dash)
-            return 0;
-
-        return dash.height + dash.margin_bottom;
+        const orientation = this._orientation();
+        if (orientation === 'left')
+            return {x: -Math.max(this._slotWidth, 1), y: 0};
+        if (orientation === 'right')
+            return {x: Math.max(this._slotWidth, 1), y: 0};
+        return {x: 0, y: Math.max(this._slotHeight, 1)};
     }
 
     _show() {
@@ -491,12 +685,15 @@ export class Dock {
             return;
 
         this._parkOnDesktop();
+        const hidden = this._hiddenOffset();
         this._dash.remove_all_transitions();
-        this._dash.translation_y = this._hiddenOffset();
+        this._dash.translation_x = hidden.x;
+        this._dash.translation_y = hidden.y;
         this._slot.show();
         this._revealed = true;
         this._setUnredirectInhibited(true);
         this._dash.ease({
+            translation_x: 0,
             translation_y: 0,
             duration: this._animationDuration(),
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
@@ -544,8 +741,10 @@ export class Dock {
         this._clearPointerWatch();
         this._revealed = false;
         this._dash.remove_all_transitions();
+        const hidden = this._hiddenOffset();
         this._dash.ease({
-            translation_y: this._hiddenOffset(),
+            translation_x: hidden.x,
+            translation_y: hidden.y,
             duration: this._animationDuration(),
             mode: Clutter.AnimationMode.EASE_IN_QUAD,
             onComplete: () => {
@@ -591,14 +790,13 @@ export class Dock {
     }
 
     _dockArea() {
-        const monitor = Main.layoutManager.primaryMonitor;
-        if (!monitor || this._slotWidth <= 0 || this._slotHeight <= 0)
+        if (this._slotWidth <= 0 || this._slotHeight <= 0)
             return null;
 
         return {
-            x: monitor.x,
-            y: monitor.y + monitor.height - this._slotHeight,
-            width: monitor.width,
+            x: this._slotX,
+            y: this._slotY,
+            width: this._slotWidth,
             height: this._slotHeight,
         };
     }
@@ -616,12 +814,17 @@ export class Dock {
         if (!box)
             return false;
 
-        return this._boxContains({
-            x: box.x,
-            y: box.y - LABEL_SLACK,
-            width: box.width,
-            height: box.height + LABEL_SLACK,
-        }, x, y);
+        const padded = {x: box.x, y: box.y, width: box.width, height: box.height};
+        if (this._orientation() === 'left')
+            padded.width += LABEL_SLACK;
+        else if (this._orientation() === 'right') {
+            padded.x -= LABEL_SLACK;
+            padded.width += LABEL_SLACK;
+        } else {
+            padded.y -= LABEL_SLACK;
+            padded.height += LABEL_SLACK;
+        }
+        return this._boxContains(padded, x, y);
     }
 
     _boxContains(box, x, y) {
