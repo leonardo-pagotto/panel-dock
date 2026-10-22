@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 import St from 'gi://St';
@@ -158,6 +159,8 @@ export class TopBar {
         this._patches = new PatchSet();
         this._monitorService = new MonitorService(settings);
         this._replicas = [];
+        this._pendingReplicaRemovals = [];
+        this._replicaRemovalId = 0;
         this._stockSaved = false;
         this._panelMonitors = new WeakMap();
         this._shellVisible = new WeakMap();
@@ -186,6 +189,7 @@ export class TopBar {
         this._patches?.restoreAll();
         this._restoreIndicators();
         this._restoreStockPanel();
+        this._flushReplicaRemovals();
         this._destroyReplicas();
         this._signals = null;
         this._patches = null;
@@ -478,7 +482,7 @@ export class TopBar {
             if (wanted.has(replica.index))
                 kept.push(replica);
             else
-                this._removeReplica(replica.box);
+                this._queueReplicaRemoval(replica.box);
         }
 
         this._replicas = kept;
@@ -527,14 +531,41 @@ export class TopBar {
     }
 
     _destroyReplicas() {
-        const replicas = this._replicas;
+        const replicas = this._replicas ?? [];
         this._replicas = [];
 
         for (const replica of replicas)
-            this._removeReplica(replica.box);
+            this._destroyReplicaBox(replica.box);
     }
 
-    _removeReplica(box) {
+    // Blur My Shell clears its panel list in the same monitors pass that
+    // removes a bar. Unparenting in that pass runs its parent-set handler
+    // after the list is gone.
+    _queueReplicaRemoval(box) {
+        this._pendingReplicaRemovals.push(box);
+        if (this._replicaRemovalId)
+            return;
+
+        this._replicaRemovalId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._replicaRemovalId = 0;
+            this._flushReplicaRemovals();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _flushReplicaRemovals() {
+        if (this._replicaRemovalId) {
+            GLib.source_remove(this._replicaRemovalId);
+            this._replicaRemovalId = 0;
+        }
+
+        const boxes = this._pendingReplicaRemovals ?? [];
+        this._pendingReplicaRemovals = [];
+        for (const box of boxes)
+            this._destroyReplicaBox(box);
+    }
+
+    _destroyReplicaBox(box) {
         try {
             if (box.get_parent())
                 Main.layoutManager.removeChrome(box);

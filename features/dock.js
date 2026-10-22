@@ -2,13 +2,16 @@
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
+import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
 import St from 'gi://St';
 
+import {Dash} from 'resource:///org/gnome/shell/ui/dash.js';
+import * as Layout from 'resource:///org/gnome/shell/ui/layout.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Urgency} from 'resource:///org/gnome/shell/ui/messageTray.js';
 import {ControlsState} from 'resource:///org/gnome/shell/ui/overviewControls.js';
 
-import {PatchSet} from '../lib/patch.js';
 import {
     DOCK_ANIMATION_DURATION_KEY,
     DOCK_AUTOHIDE_IN_FULLSCREEN_KEY,
@@ -30,13 +33,9 @@ export class Dock {
         this._logger = extension.getLogger();
         this._settings = settings;
         this._signals = null;
-        this._patches = null;
         this._dash = null;
         this._slot = null;
         this._edge = null;
-        this._overviewParent = null;
-        this._overviewIndex = 0;
-        this._dashVisible = true;
         this._slotWidth = 0;
         this._slotHeight = 0;
         this._slotSizeId = 0;
@@ -49,29 +48,44 @@ export class Dock {
         this._lastPressureY = null;
         this._revealed = false;
         this._motionFailed = false;
+        this._barrier = null;
+        this._pressureBarrier = null;
+        this._pressureTriggerId = 0;
+        this._triggerKey = null;
+        this._barrierFailed = false;
     }
 
     enable() {
         this._signals = new SignalTracker();
-        this._dash = Main.overview.dash;
-        this._overviewParent = this._dash.get_parent();
-        this._overviewIndex = this._overviewParent.get_children().indexOf(this._dash);
-        this._dashVisible = this._dash.visible;
-        this._settingMaxSize = false;
-        this._holdOverviewLayout();
 
-        // The overview actor is hidden on the desktop, so the dash has to
-        // leave it before it can appear there. The slot clips the slide.
+        // Blur My Shell styles a dock it finds by name, the same way it
+        // styles a box named panelBox. This actor is that dock. The
+        // overview dash stays where the shell allocated it.
         this._slot = new St.Widget({
+            name: 'dash',
             clip_to_allocation: true,
             reactive: false,
+            x_expand: false,
+            y_expand: false,
+            layout_manager: new Clutter.BinLayout(),
         });
+        this._dash = new Dash();
+        this._dash.x_expand = true;
+        this._dash.x_align = Clutter.ActorAlign.FILL;
+        this._dash.y_expand = false;
+        this._dash.y_align = Clutter.ActorAlign.START;
+        this._slot._background = this._dash._background;
+        this._slot.add_child(this._dash);
         this._slot.hide();
 
         // A window owns the bottom of the screen, so the stage never sees the
-        // pointer there. This strip stays above the window and can open the dock.
+        // pointer there. This strip is only the screen edge; a taller one
+        // keeps clicks from the windows underneath.
         this._edge = new St.Widget({
             reactive: true,
+            x_expand: false,
+            y_expand: false,
+            height: EDGE_PX,
         });
         this._edge.hide();
         Main.layoutManager.addTopChrome(this._edge);
@@ -97,6 +111,10 @@ export class Dock {
         this._signals.connect(global.display, 'in-fullscreen-changed', refresh);
         this._signals.connect(Main.layoutManager, 'monitors-changed', refresh);
         this._signals.connect(this._dash, 'icon-size-changed', () => this._layoutSlot());
+        // The pill reads the icon row's width during allocation. Adding or
+        // removing an app is the only later pass that used to run it again.
+        this._signals.connect(this._dash._box, 'child-added', () => this._queueSlotSize());
+        this._signals.connect(this._dash._box, 'child-removed', () => this._queueSlotSize());
         this._signals.connect(global.stage, 'captured-event', (_actor, event) => {
             return this._onCapturedEvent(event);
         });
@@ -112,8 +130,6 @@ export class Dock {
 
         this._signals?.disconnectAll();
         this._signals = null;
-        this._patches?.restoreAll();
-        this._patches = null;
 
         try {
             this._returnDashToOverview();
@@ -121,12 +137,13 @@ export class Dock {
             // The overview can already be tearing down with the shell.
         }
 
+        this._destroyPressureBarrier();
+
         const slot = this._slot;
         const edge = this._edge;
         this._slot = null;
         this._edge = null;
         this._dash = null;
-        this._overviewParent = null;
         this._revealed = false;
         this._settings = null;
         this._logger = null;
@@ -145,25 +162,6 @@ export class Dock {
             // The chrome tracker can already have dropped the actor.
         }
         actor.destroy();
-    }
-
-    _holdOverviewLayout() {
-        this._patches = new PatchSet();
-        const dock = this;
-
-        // The controls layout allocates the dash in overview coordinates on
-        // every pass. Inside the desktop slot that box clips the icons.
-        const originalAllocate = this._patches.add(this._dash, 'allocate', function (box) {
-            if (this.get_parent() === dock._slot)
-                return undefined;
-            return originalAllocate.call(this, box);
-        });
-
-        const originalSetMaxSize = this._patches.add(this._dash, 'setMaxSize', function (maxWidth, maxHeight) {
-            if (this.get_parent() === dock._slot && !dock._settingMaxSize)
-                return undefined;
-            return originalSetMaxSize.call(this, maxWidth, maxHeight);
-        });
     }
 
     _clearSlotSize() {
@@ -332,8 +330,20 @@ export class Dock {
         return Main.layoutManager.primaryMonitor?.inFullscreen ?? false;
     }
 
+    _actorAlive(actor) {
+        if (!actor)
+            return false;
+
+        try {
+            // A disposed actor throws on any property read.
+            return actor.get_parent() !== undefined;
+        } catch (e) {
+            return false;
+        }
+    }
+
     _sync() {
-        if (!this._dash)
+        if (!this._actorAlive(this._dash))
             return;
 
         if (!this._autohide() || Main.overview.visible) {
@@ -350,22 +360,15 @@ export class Dock {
 
     _returnDashToOverview() {
         const dash = this._dash;
-        const parent = this._overviewParent;
         this._clearPointerWatch();
         this._setUnredirectInhibited(false);
         this._revealed = false;
 
-        if (dash) {
-            dash.remove_all_transitions();
+        if (this._actorAlive(dash))
             dash.translation_y = 0;
-            dash.visible = this._dashVisible;
-
-            if (parent && dash.get_parent() !== parent) {
-                dash.get_parent()?.remove_child(dash);
-                const index = Math.min(this._overviewIndex, parent.get_n_children());
-                parent.insert_child_at_index(dash, index);
-            }
-        }
+        this._slot?.remove_all_transitions();
+        if (this._slot)
+            this._slot.translation_y = 0;
 
         this._slot?.hide();
         this._updateEdge();
@@ -374,13 +377,8 @@ export class Dock {
     _parkOnDesktop() {
         const dash = this._dash;
         const slot = this._slot;
-        if (!dash || !slot)
+        if (!this._actorAlive(dash) || !slot || dash.get_parent() !== slot)
             return;
-
-        if (dash.get_parent() !== slot) {
-            dash.get_parent()?.remove_child(dash);
-            slot.add_child(dash);
-        }
 
         this._layoutSlot();
     }
@@ -389,16 +387,14 @@ export class Dock {
         const monitor = Main.layoutManager.primaryMonitor;
         const dash = this._dash;
         const slot = this._slot;
-        if (!monitor || !dash || !slot || dash.get_parent() !== slot)
+        if (!monitor || !this._actorAlive(dash) || !slot || dash.get_parent() !== slot)
             return;
 
         const width = monitor.width;
         // A hidden overview can leave this at 0, and the dash then
         // collapses its icons to the smallest size.
         const maxHeight = Math.max(Math.round(monitor.height * 0.16), 1);
-        this._settingMaxSize = true;
         dash.setMaxSize(width, maxHeight);
-        this._settingMaxSize = false;
         this._applySlotSize();
         this._queueSlotSize();
     }
@@ -418,59 +414,161 @@ export class Dock {
         const monitor = Main.layoutManager.primaryMonitor;
         const dash = this._dash;
         const slot = this._slot;
-        if (!monitor || !dash || !slot || dash.get_parent() !== slot)
+        if (!monitor || !this._actorAlive(dash) || !slot || dash.get_parent() !== slot)
             return;
 
         // Same width the overview gives the dash. A tighter width clips the
         // background, because the pill is centered inside the full allocation.
         const dashWidth = monitor.width;
+        const maxHeight = Math.max(Math.round(monitor.height * 0.16), 1);
         let [, dashHeight] = dash.get_preferred_height(dashWidth);
-        dashHeight = Math.ceil(dashHeight);
-        if (dashHeight <= 0)
-            return;
+        const [, iconHeight] = dash._box.get_preferred_height(dashWidth);
+        const padding = dash._background.get_theme_node().get_vertical_padding()
+            + dash.get_theme_node().get_vertical_padding();
+        dashHeight = Math.ceil(Math.max(dashHeight, iconHeight + padding));
+        dashHeight = Math.min(Math.max(dashHeight, 1), maxHeight);
 
+        // The slot's layout was keeping the dash at its minimum width, so the
+        // icon row was squeezed. Give it the same box the overview uses.
         const slotHeight = dashHeight + dash.margin_bottom;
         this._slotWidth = dashWidth;
         this._slotHeight = slotHeight;
         slot.set_position(monitor.x, monitor.y + monitor.height - slotHeight);
         slot.set_size(dashWidth, slotHeight);
         dash.set_position(0, 0);
-        dash.set_size(dashWidth, dashHeight);
+        const box = new Clutter.ActorBox({
+            x1: 0,
+            y1: 0,
+            x2: dashWidth,
+            y2: dashHeight,
+        });
+        // The pill is allocated before the icon row, so it keeps the previous
+        // width. A second pass sees the row and follows it.
+        dash.allocate(box);
+        dash.allocate(box);
         this._updateEdge();
     }
 
     _placeHidden() {
         const dash = this._dash;
-        if (!dash)
+        if (!this._actorAlive(dash))
             return;
 
         this._parkOnDesktop();
         this._clearPointerWatch();
         this._setUnredirectInhibited(false);
-        dash.remove_all_transitions();
-        dash.translation_y = this._hiddenOffset();
+        dash.translation_y = 0;
+        this._slot?.remove_all_transitions();
+        if (this._slot)
+            this._slot.translation_y = this._hiddenOffset();
         this._revealed = false;
         this._slot?.hide();
         this._updateEdge();
     }
 
     _updateEdge() {
+        this._updatePressureBarrier();
+
         const edge = this._edge;
         const monitor = Main.layoutManager.primaryMonitor;
         if (!edge || !monitor)
             return;
 
-        if (!this._autohide() || Main.overview.visible || this._fullscreenBlocks()) {
+        // The open dock is the click target. The hotspot is only the
+        // screen edge, and only while the dock is hidden.
+        if (!this._autohide() || this._revealed || Main.overview.visible || this._fullscreenBlocks()) {
             edge.hide();
             return;
         }
 
-        const thickness = this._pressureOn()
-            ? this._pressureZone()
-            : Math.max(this._slotHeight, EDGE_PX);
-        edge.set_position(monitor.x, monitor.y + monitor.height - thickness);
-        edge.set_size(monitor.width, thickness);
+        edge.set_position(monitor.x, monitor.y + monitor.height - EDGE_PX);
+        edge.set_size(monitor.width, EDGE_PX);
         edge.show();
+    }
+
+    _pressureBarrierKey() {
+        if (!this._pressureOn() || !this._autohide() || this._revealed)
+            return null;
+        if (Main.overview.visible || this._fullscreenBlocks())
+            return null;
+
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (!monitor || monitor.width <= 2)
+            return null;
+
+        return `${monitor.x}:${monitor.y}:${monitor.width}:${monitor.height}:${this._pressureThreshold()}`;
+    }
+
+    _updatePressureBarrier() {
+        const key = this._pressureBarrierKey();
+        if (key === this._triggerKey)
+            return;
+
+        this._destroyPressureBarrier();
+        this._triggerKey = key;
+        if (!key)
+            return;
+
+        const monitor = Main.layoutManager.primaryMonitor;
+        const threshold = Math.max(this._pressureThreshold(), 1);
+
+        try {
+            // The barrier watches a push against the screen edge. It does
+            // not take a band of the window's input the way a tall actor does.
+            const barrier = new Meta.Barrier({
+                backend: global.backend,
+                x1: monitor.x + 1,
+                x2: monitor.x + monitor.width - 1,
+                y1: monitor.y + monitor.height,
+                y2: monitor.y + monitor.height,
+                directions: Meta.BarrierDirection.NEGATIVE_Y,
+            });
+            const pressure = new Layout.PressureBarrier(
+                threshold,
+                PRESSURE_TIMEOUT_MS,
+                Shell.ActionMode.NORMAL);
+            const id = pressure.connect('trigger', () => this._show());
+            pressure.addBarrier(barrier);
+            this._barrier = barrier;
+            this._pressureBarrier = pressure;
+            this._pressureTriggerId = id;
+        } catch (e) {
+            if (!this._barrierFailed) {
+                this._barrierFailed = true;
+                this._logger?.warn(`Could not watch the dock edge: ${e.message}`);
+            }
+            this._destroyPressureBarrier();
+            this._triggerKey = key;
+        }
+    }
+
+    _destroyPressureBarrier() {
+        const pressure = this._pressureBarrier;
+        const barrier = this._barrier;
+        const id = this._pressureTriggerId;
+        this._pressureBarrier = null;
+        this._barrier = null;
+        this._pressureTriggerId = 0;
+        this._triggerKey = null;
+
+        try {
+            if (pressure && id)
+                pressure.disconnect(id);
+        } catch (e) {
+            // The barrier can already be gone during session shutdown.
+        }
+
+        try {
+            pressure?.destroy();
+        } catch (e) {
+            // Already destroyed with the shell.
+        }
+
+        try {
+            barrier?.destroy();
+        } catch (e) {
+            // Already destroyed with the shell.
+        }
     }
 
     _hiddenOffset() {
@@ -478,25 +576,27 @@ export class Dock {
             return this._slotHeight;
 
         const dash = this._dash;
-        if (!dash)
+        if (!this._actorAlive(dash))
             return 0;
 
         return dash.height + dash.margin_bottom;
     }
 
     _show() {
-        if (!this._dash || !this._slot || !this._autohide() || Main.overview.visible)
+        if (!this._actorAlive(this._dash) || !this._slot || !this._autohide() || Main.overview.visible)
             return;
         if (this._fullscreenBlocks() || this._revealed)
             return;
 
         this._parkOnDesktop();
-        this._dash.remove_all_transitions();
-        this._dash.translation_y = this._hiddenOffset();
+        this._dash.translation_y = 0;
+        this._slot.remove_all_transitions();
+        this._slot.translation_y = this._hiddenOffset();
         this._slot.show();
         this._revealed = true;
+        this._updateEdge();
         this._setUnredirectInhibited(true);
-        this._dash.ease({
+        this._slot.ease({
             translation_y: 0,
             duration: this._animationDuration(),
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
@@ -511,7 +611,7 @@ export class Dock {
 
         this._outsideSince = 0;
         this._pointerWatchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
-            if (!this._revealed || Main.overview.visible) {
+            if (!this._actorAlive(this._dash) || !this._revealed || Main.overview.visible) {
                 this._pointerWatchId = 0;
                 this._outsideSince = 0;
                 return GLib.SOURCE_REMOVE;
@@ -538,21 +638,23 @@ export class Dock {
     }
 
     _hide() {
-        if (!this._dash || !this._revealed)
+        if (!this._actorAlive(this._dash) || !this._revealed)
             return;
 
         this._clearPointerWatch();
         this._revealed = false;
-        this._dash.remove_all_transitions();
-        this._dash.ease({
+        this._dash.translation_y = 0;
+        this._slot.remove_all_transitions();
+        this._slot.ease({
             translation_y: this._hiddenOffset(),
             duration: this._animationDuration(),
             mode: Clutter.AnimationMode.EASE_IN_QUAD,
             onComplete: () => {
-                if (this._revealed || Main.overview.visible)
+                if (!this._actorAlive(this._dash) || this._revealed || Main.overview.visible)
                     return;
                 this._slot?.hide();
                 this._setUnredirectInhibited(false);
+                this._updateEdge();
             },
         });
     }
