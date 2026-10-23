@@ -1,8 +1,9 @@
 {
-  "uuid": "better-gnome-shell@leonardo",
+  "uuid": "better-gnome-shell@pagotto.tech",
   "name": "Better GNOME Shell",
-  "description": "A GNOME Shell extension.",
+  "description": "A GNOME Shell extension that adds some useful features and improvements to the GNOME Shell experience.",
   "shell-version": ["50"],
   "gettext-domain": "better-gnome-shell",
-  "settings-schema": "org.gnome.shell.extensions.better-gnome-shell"
+  "settings-schema": "org.gnome.shell.extensions.better-gnome-shell",
+  "url": "https://github.com/leonardo-pagotto/better-gnome-shell"
 }
