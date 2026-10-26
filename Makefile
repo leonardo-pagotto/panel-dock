@@ -1,18 +1,19 @@
 UUID := better-gnome-shell@pagotto.tech
 EXTENSIONS_DIR := $(HOME)/.local/share/gnome-shell/extensions
 DEST := $(EXTENSIONS_DIR)/$(UUID)
+BUNDLE := $(UUID).shell-extension.zip
 
 .PHONY: install uninstall enable disable pack schemas
 
 schemas:
 	glib-compile-schemas --strict schemas/
 
-install: schemas
-	mkdir -p $(EXTENSIONS_DIR)
-	ln -sfn $(CURDIR) $(DEST)
+install: pack
+	if [ -L "$(DEST)" ]; then rm "$(DEST)"; fi
+	gnome-extensions install --force "$(BUNDLE)"
 
 uninstall:
-	rm -f $(DEST)
+	rm -rf "$(DEST)"
 
 enable: install
 	gnome-extensions enable $(UUID)

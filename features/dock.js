@@ -6,17 +6,20 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
-import {Dash} from 'resource:///org/gnome/shell/ui/dash.js';
+import {Dash, DashIcon} from 'resource:///org/gnome/shell/ui/dash.js';
 import * as Layout from 'resource:///org/gnome/shell/ui/layout.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Urgency} from 'resource:///org/gnome/shell/ui/messageTray.js';
 import {ControlsState} from 'resource:///org/gnome/shell/ui/overviewControls.js';
 
+import {PatchSet} from '../lib/patch.js';
 import {
     DOCK_ANIMATION_DURATION_KEY,
     DOCK_AUTOHIDE_IN_FULLSCREEN_KEY,
     DOCK_AUTOHIDE_KEY,
     DOCK_AUTOHIDE_URGENT_KEY,
+    DOCK_CLICK_LEFT_KEY,
+    DOCK_CLICK_MIDDLE_KEY,
     DOCK_HIDE_TIMEOUT_KEY,
     DOCK_PRESSURE_THRESHOLD_KEY,
     DOCK_PRESSURE_TO_ACTIVATE_KEY,
@@ -33,6 +36,7 @@ export class Dock {
         this._logger = extension.getLogger();
         this._settings = settings;
         this._signals = null;
+        this._patches = null;
         this._dash = null;
         this._slot = null;
         this._edge = null;
@@ -53,10 +57,13 @@ export class Dock {
         this._pressureTriggerId = 0;
         this._triggerKey = null;
         this._barrierFailed = false;
+        this._clickFailed = false;
     }
 
     enable() {
         this._signals = new SignalTracker();
+        this._patches = new PatchSet();
+        this._patchDashClicks();
 
         // Blur My Shell styles a dock it finds by name, the same way it
         // styles a box named panelBox. This actor is that dock. The
@@ -131,6 +138,9 @@ export class Dock {
         this._signals?.disconnectAll();
         this._signals = null;
 
+        this._patches?.restoreAll();
+        this._patches = null;
+
         try {
             this._returnDashToOverview();
         } catch (e) {
@@ -179,6 +189,80 @@ export class Dock {
         GLib.source_remove(this._pointerWatchId);
         this._pointerWatchId = 0;
         this._outsideSince = 0;
+    }
+
+    _patchDashClicks() {
+        const dock = this;
+        // Dash icons are the dock. The app grid uses AppIcon, so this
+        // leaves those clicks on the stock path.
+        this._patches.add(DashIcon.prototype, 'activate', function (button) {
+            dock._applyClick(this, button);
+        });
+    }
+
+    _clickKey(button) {
+        if (button === Clutter.BUTTON_MIDDLE)
+            return DOCK_CLICK_MIDDLE_KEY;
+
+        return DOCK_CLICK_LEFT_KEY;
+    }
+
+    _applyClick(icon, button) {
+        const app = icon?.app;
+        if (!app || !this._settings)
+            return;
+
+        try {
+            const action = this._settings.get_string(this._clickKey(button));
+            if (action === 'new-window')
+                this._openNewWindow(icon);
+            else if (action === 'close-windows')
+                this._closeWindows(app);
+            else
+                this._focusOrOpen(icon);
+        } catch (e) {
+            if (!this._clickFailed) {
+                this._clickFailed = true;
+                this._logger?.warn(`Dock click action failed: ${e.message}`);
+            }
+        }
+    }
+
+    _focusOrOpen(icon) {
+        const {app} = icon;
+        if (app.state === Shell.AppState.STOPPED)
+            icon.animateLaunch();
+
+        app.activate();
+        Main.overview.hide();
+    }
+
+    _openNewWindow(icon) {
+        const {app} = icon;
+        if (app.state === Shell.AppState.STOPPED || app.can_open_new_window())
+            icon.animateLaunch();
+
+        app.open_new_window(-1);
+        Main.overview.hide();
+    }
+
+    _closeWindows(app) {
+        const windows = app.get_windows();
+        if (!windows.length)
+            return;
+
+        const time = global.get_current_time();
+        let closed = false;
+        for (const window of windows) {
+            if (!window.can_close())
+                continue;
+
+            window.delete(time);
+            closed = true;
+        }
+
+        if (closed)
+            Main.overview.hide();
     }
 
     _onShowAppsToggled() {
@@ -618,7 +702,7 @@ export class Dock {
             }
 
             const [x, y] = global.get_pointer();
-            if (this._urgent.size > 0 || this._pointerKeepsDockShown(x, y)) {
+            if (this._urgent.size > 0 || this._dashMenuOpen() || this._pointerKeepsDockShown(x, y)) {
                 this._outsideSince = 0;
                 return GLib.SOURCE_CONTINUE;
             }
@@ -711,6 +795,13 @@ export class Dock {
             return false;
 
         return this._boxContains(box, x, y);
+    }
+
+    _dashMenuOpen() {
+        const children = this._dash?._box?.get_children() ?? [];
+        // The app menu is outside the dock, above the icon. The pointer
+        // leaves the dock on the way there, which used to hide it.
+        return children.some(item => item.child?._menu?.isOpen);
     }
 
     _pointerKeepsDockShown(x, y) {

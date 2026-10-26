@@ -14,7 +14,6 @@ import {
     DOCK_AUTOHIDE_URGENT_KEY,
     DOCK_CLICK_LEFT_KEY,
     DOCK_CLICK_MIDDLE_KEY,
-    DOCK_CLICK_RIGHT_KEY,
     DOCK_HIDE_TIMEOUT_KEY,
     DOCK_ORIENTATION_KEY,
     DOCK_PRESSURE_THRESHOLD_KEY,
@@ -31,7 +30,7 @@ function dockOrientations() {
 
 function clickActions() {
     return [
-        {id: 'focus-or-open', title: _('Focus or open')},
+        {id: 'focus-or-open', title: _('Focus or open window')},
         {id: 'new-window', title: _('Open a new window')},
         {id: 'close-windows', title: _('Close open windows')},
     ];
@@ -71,7 +70,7 @@ export class DockPage extends Adw.PreferencesPage {
 
         const mouse = new Adw.PreferencesGroup({
             title: _('Mouse Click Action'),
-            description: _('What an app icon does for each button. Saved for a future version.'),
+            description: _('What a left or middle click on an app icon does.'),
         });
         this.add(mouse);
 
@@ -82,12 +81,6 @@ export class DockPage extends Adw.PreferencesPage {
             null,
             actions,
             'focus-or-open'));
-        mouse.add(this._choiceRow(
-            DOCK_CLICK_RIGHT_KEY,
-            _('Right click'),
-            null,
-            actions,
-            'close-windows'));
         mouse.add(this._choiceRow(
             DOCK_CLICK_MIDDLE_KEY,
             _('Middle click'),
