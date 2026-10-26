@@ -12,6 +12,9 @@ import {
     DOCK_AUTOHIDE_IN_FULLSCREEN_KEY,
     DOCK_AUTOHIDE_KEY,
     DOCK_AUTOHIDE_URGENT_KEY,
+    DOCK_CLICK_LEFT_KEY,
+    DOCK_CLICK_MIDDLE_KEY,
+    DOCK_CLICK_RIGHT_KEY,
     DOCK_HIDE_TIMEOUT_KEY,
     DOCK_ORIENTATION_KEY,
     DOCK_PRESSURE_THRESHOLD_KEY,
@@ -23,6 +26,14 @@ function dockOrientations() {
         {id: 'bottom', title: _('Bottom')},
         {id: 'left', title: _('Left')},
         {id: 'right', title: _('Right')},
+    ];
+}
+
+function clickActions() {
+    return [
+        {id: 'focus-or-open', title: _('Focus or open')},
+        {id: 'new-window', title: _('Open a new window')},
+        {id: 'close-windows', title: _('Close open windows')},
     ];
 }
 
@@ -57,6 +68,32 @@ export class DockPage extends Adw.PreferencesPage {
             this._saveOrientation(orientations);
         });
         group.add(this._orientationRow);
+
+        const mouse = new Adw.PreferencesGroup({
+            title: _('Mouse Click Action'),
+            description: _('What an app icon does for each button. Saved for a future version.'),
+        });
+        this.add(mouse);
+
+        const actions = clickActions();
+        mouse.add(this._choiceRow(
+            DOCK_CLICK_LEFT_KEY,
+            _('Left click'),
+            null,
+            actions,
+            'focus-or-open'));
+        mouse.add(this._choiceRow(
+            DOCK_CLICK_RIGHT_KEY,
+            _('Right click'),
+            null,
+            actions,
+            'close-windows'));
+        mouse.add(this._choiceRow(
+            DOCK_CLICK_MIDDLE_KEY,
+            _('Middle click'),
+            _('The scroll-wheel button.'),
+            actions,
+            'new-window'));
 
         const autohide = new Adw.PreferencesGroup({
             title: _('Autohide'),
@@ -149,6 +186,38 @@ export class DockPage extends Adw.PreferencesPage {
 
         this._settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
         return row;
+    }
+
+    _choiceRow(key, title, subtitle, choices, fallbackId) {
+        const row = new Adw.ComboRow({
+            title,
+            model: Gtk.StringList.new(choices.map(item => item.title)),
+            selected: this._choiceIndex(key, choices, fallbackId),
+        });
+        if (subtitle)
+            row.subtitle = subtitle;
+
+        row.connect('notify::selected', () => {
+            const item = choices[row.selected];
+            if (!item)
+                return;
+
+            if (this._settings.get_string(key) === item.id)
+                return;
+
+            this._settings.set_string(key, item.id);
+        });
+        return row;
+    }
+
+    _choiceIndex(key, choices, fallbackId) {
+        const value = this._settings.get_string(key);
+        const index = choices.findIndex(item => item.id === value);
+        if (index >= 0)
+            return index;
+
+        const fallback = choices.findIndex(item => item.id === fallbackId);
+        return fallback >= 0 ? fallback : 0;
     }
 
     _selectedOrientation(orientations) {

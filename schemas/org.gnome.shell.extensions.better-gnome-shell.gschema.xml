@@ -39,6 +39,36 @@
       <summary>Dock pressure threshold</summary>
       <description>How far the pointer must press against the bottom edge, in pixels, before the dock is shown. Used when pressure to activate is on.</description>
     </key>
+    <key name="dock-click-left" type="s">
+      <choices>
+        <choice value="focus-or-open"/>
+        <choice value="new-window"/>
+        <choice value="close-windows"/>
+      </choices>
+      <default>'focus-or-open'</default>
+      <summary>Left click on a dock icon</summary>
+      <description>What a left click on a dock app icon will do. The extension stores this value and does not apply it yet.</description>
+    </key>
+    <key name="dock-click-right" type="s">
+      <choices>
+        <choice value="focus-or-open"/>
+        <choice value="new-window"/>
+        <choice value="close-windows"/>
+      </choices>
+      <default>'close-windows'</default>
+      <summary>Right click on a dock icon</summary>
+      <description>What a right click on a dock app icon will do. The extension stores this value and does not apply it yet.</description>
+    </key>
+    <key name="dock-click-middle" type="s">
+      <choices>
+        <choice value="focus-or-open"/>
+        <choice value="new-window"/>
+        <choice value="close-windows"/>
+      </choices>
+      <default>'new-window'</default>
+      <summary>Middle click on a dock icon</summary>
+      <description>What a middle click, the scroll-wheel button, on a dock app icon will do. The extension stores this value and does not apply it yet.</description>
+    </key>
     <key name="dock-orientation" type="s">
       <choices>
         <choice value="top"/>
