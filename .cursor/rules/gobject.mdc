@@ -24,7 +24,7 @@ class ClockButton extends St.Button {
 
     _init() {
         super._init({
-            style_class: 'better-gnome-shell-clock',
+            style_class: 'panel-dock-clock',
             label: _('Clock'),
         });
     }

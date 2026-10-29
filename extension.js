@@ -6,7 +6,7 @@ import {Dock} from './features/dock.js';
 import {TopBar} from './features/topBar.js';
 import {PanelIconsService} from './services/panelIconsService.js';
 
-export default class BetterGnomeShellExtension extends Extension {
+export default class PanelDockExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._features = [];

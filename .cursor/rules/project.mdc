@@ -1,11 +1,11 @@
 ---
-description: Core constraints for the Better GNOME Shell extension
+description: Core constraints for the Panel & Dock extension
 alwaysApply: true
 ---
 
-# Better GNOME Shell
+# Panel & Dock
 
-GNOME Shell 50 ESM extension (`better-gnome-shell@leonardo`). It customizes the top bar and the overview Dash. Runtime is GJS. `make install` symlinks this directory into the user extensions folder.
+GNOME Shell 50 ESM extension (`panel-dock@pagotto.tech`). It customizes the top bar and the overview Dash. Runtime is GJS. `make install` symlinks this directory into the user extensions folder.
 
 ## Request scope
 

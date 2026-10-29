@@ -7,16 +7,16 @@ alwaysApply: false
 
 Add `schemas/` and `prefs.js` only when a task needs a user preference.
 
-- Set `"settings-schema": "org.gnome.shell.extensions.better-gnome-shell"` in `metadata.json`. The schema id is that same string.
+- Set `"settings-schema": "org.gnome.shell.extensions.panel-dock"` in `metadata.json`. The schema id is that same string.
 - `extension.js` is the only shell code that calls `this.getSettings()`. Pass that `Gio.Settings` object into the features that read it.
 - Disconnect settings signals in `disable()` through the feature's `SignalTracker`.
 
-`prefs.js` stays at the extension root because GNOME loads that file by name. It only owns `BetterGnomeShellPreferences`.
+`prefs.js` stays at the extension root because GNOME loads that file by name. It only owns `PanelDockPreferences`.
 
 Each tab is a named export in its own file under `preferences/`. `generalPage.js` exports `GeneralPage`. Do not define a page class in `prefs.js`. Do not put a second page class in a file that already exports one.
 
 ```javascript
-export default class BetterGnomeShellPreferences extends ExtensionPreferences {
+export default class PanelDockPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
 

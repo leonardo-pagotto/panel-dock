@@ -6,7 +6,7 @@ import {DockPage} from './preferences/dockPage.js';
 import {GeneralPage} from './preferences/generalPage.js';
 import {PanelPage} from './preferences/panelPage.js';
 
-export default class BetterGnomeShellPreferences extends ExtensionPreferences {
+export default class PanelDockPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
 

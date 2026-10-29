@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<schemalist gettext-domain="better-gnome-shell">
-  <schema id="org.gnome.shell.extensions.better-gnome-shell" path="/org/gnome/shell/extensions/better-gnome-shell/">
+<schemalist gettext-domain="panel-dock">
+  <schema id="org.gnome.shell.extensions.panel-dock" path="/org/gnome/shell/extensions/panel-dock/">
     <key name="dock-autohide" type="b">
       <default>true</default>
       <summary>Autohide the dock</summary>

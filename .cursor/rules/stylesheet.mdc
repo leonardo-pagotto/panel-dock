@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Stylesheet
 
-Prefix every class this extension introduces with `better-gnome-shell-`. Put shared look in `stylesheet.css`. Use inline `style` only for a value computed at runtime. Do not edit the shell theme under `/usr/share/gnome-shell`.
+Prefix every class this extension introduces with `panel-dock-`. Put shared look in `stylesheet.css`. Use inline `style` only for a value computed at runtime. Do not edit the shell theme under `/usr/share/gnome-shell`.
 
 ```css
 /* ❌ BAD */
@@ -15,12 +15,12 @@ Prefix every class this extension introduces with `better-gnome-shell-`. Put sha
 }
 
 /* ✅ GOOD */
-.better-gnome-shell-clock {
+.panel-dock-clock {
     padding: 0 4px;
 }
 
 /* ✅ GOOD: a shell class only narrows an extension class */
-.panel-button.better-gnome-shell-clock {
+.panel-button.panel-dock-clock {
     padding: 0 4px;
 }
 ```

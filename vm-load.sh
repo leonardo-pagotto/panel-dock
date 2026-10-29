@@ -2,4 +2,4 @@
 make pack
 
 # request admin privileges to copy the extension to the vm-share folder
-sudo cp -f ./better-gnome-shell@leonardo.shell-extension.zip ~/vm-share/extension/
+sudo cp -f ./panel-dock@pagotto.tech.shell-extension.zip ~/vm-share/extension/

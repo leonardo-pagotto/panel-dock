@@ -1,1 +1,1 @@
-# Better GNOME Shell
+# Panel & Dock

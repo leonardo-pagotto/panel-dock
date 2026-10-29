@@ -1,4 +1,4 @@
-UUID := better-gnome-shell@pagotto.tech
+UUID := panel-dock@pagotto.tech
 EXTENSIONS_DIR := $(HOME)/.local/share/gnome-shell/extensions
 DEST := $(EXTENSIONS_DIR)/$(UUID)
 BUNDLE := $(UUID).shell-extension.zip
